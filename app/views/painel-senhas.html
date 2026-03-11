@@ -17,7 +17,7 @@
 
         <div class="tv-badge" title="Atualização em tempo real">
           <span class="tv-badge-dot" aria-hidden="true"></span>
-          Tempo real
+          <span id="tvStatusText">Tempo real</span>
         </div>
       </header>
 
@@ -53,9 +53,52 @@
     const senhaAtualEl = document.getElementById("senhaAtual");
     const historicoEl = document.getElementById("historico");
     const mensagemEl = document.getElementById("mensagem");
+    const tvStatusTextEl = document.getElementById("tvStatusText");
+    const tvStatusDotEl = document.querySelector(".tv-badge-dot");
+
+    let socket;
+    let tentativaReconexao = 0;
+    let timerReconexao;
+    let timerIndicacao;
+    let paginaEncerrando = false;
+    let jaConectouUmaVez = false;
 
     function formatarSenha(numero) {
       return String(numero).padStart(3, "0");
+    }
+
+    function definirStatusWs(status) {
+      if (!tvStatusTextEl) return;
+
+      if (status === "online") {
+        tvStatusTextEl.textContent = "Tempo real";
+        if (tvStatusDotEl) tvStatusDotEl.style.opacity = "1";
+        return;
+      }
+
+      if (status === "connecting") {
+        tvStatusTextEl.textContent = "Conectando...";
+        if (tvStatusDotEl) tvStatusDotEl.style.opacity = "0.75";
+        return;
+      }
+
+      if (status === "reconnecting") {
+        tvStatusTextEl.textContent = "Reconectando...";
+        if (tvStatusDotEl) tvStatusDotEl.style.opacity = "0.6";
+        return;
+      }
+
+      tvStatusTextEl.textContent = "Offline";
+      if (tvStatusDotEl) tvStatusDotEl.style.opacity = "0.4";
+    }
+
+    function indicarConexaoPendente(status) {
+      if (timerIndicacao) clearTimeout(timerIndicacao);
+
+      timerIndicacao = setTimeout(() => {
+        timerIndicacao = undefined;
+        definirStatusWs(status);
+      }, 650);
     }
 
     function animarAtualizacao() {
@@ -121,9 +164,34 @@
       }
     }
 
+    function agendarReconexao() {
+      if (paginaEncerrando) return;
+      if (timerReconexao) return;
+
+      tentativaReconexao += 1;
+      const atrasoBaseMs = 500;
+      const atrasoMaxMs = 10000;
+      const atrasoMs = Math.min(atrasoMaxMs, atrasoBaseMs * Math.pow(2, tentativaReconexao - 1));
+      const jitterMs = Math.floor(Math.random() * 250);
+
+      indicarConexaoPendente("reconnecting");
+      timerReconexao = setTimeout(() => {
+        timerReconexao = undefined;
+        socket = conectarWs();
+      }, atrasoMs + jitterMs);
+    }
+
     function conectarWs() {
+      if (timerReconexao) {
+        clearTimeout(timerReconexao);
+        timerReconexao = undefined;
+      }
+
+      indicarConexaoPendente(tentativaReconexao > 0 ? "reconnecting" : "connecting");
+
       const protocolo = window.location.protocol === "https:" ? "wss" : "ws";
       const socket = new WebSocket(`${protocolo}://${window.location.host}`);
+      mensagemEl.textContent = "";
 
       socket.onmessage = (event) => {
         try {
@@ -139,17 +207,78 @@
         }
       };
 
+      socket.onopen = () => {
+        jaConectouUmaVez = true;
+        tentativaReconexao = 0;
+        if (timerReconexao) {
+          clearTimeout(timerReconexao);
+          timerReconexao = undefined;
+        }
+        if (timerIndicacao) {
+          clearTimeout(timerIndicacao);
+          timerIndicacao = undefined;
+        }
+        definirStatusWs("online");
+        mensagemEl.textContent = "";
+      };
+
       socket.onerror = () => {
-        mensagemEl.textContent = "Erro na conexao WebSocket.";
+        if (paginaEncerrando) return;
+        if (timerIndicacao) {
+          clearTimeout(timerIndicacao);
+          timerIndicacao = undefined;
+        }
+        definirStatusWs("offline");
+        if (jaConectouUmaVez) {
+          mensagemEl.textContent = "Erro na conexao WebSocket. Tentando reconectar...";
+        }
+        agendarReconexao();
       };
 
       socket.onclose = () => {
-        mensagemEl.textContent = "Conexao WebSocket encerrada.";
+        if (paginaEncerrando) return;
+        if (timerIndicacao) {
+          clearTimeout(timerIndicacao);
+          timerIndicacao = undefined;
+        }
+        definirStatusWs("offline");
+        if (jaConectouUmaVez) {
+          mensagemEl.textContent = "Conexao WebSocket encerrada. Tentando reconectar...";
+        }
+        agendarReconexao();
       };
+
+      return socket;
     }
 
     carregarEstadoInicial();
-    conectarWs();
+    socket = conectarWs();
+
+    window.addEventListener("online", () => {
+      if (paginaEncerrando) return;
+      if (!socket || socket.readyState === WebSocket.CLOSED) {
+        socket = conectarWs();
+      }
+    });
+
+    window.addEventListener("offline", () => {
+      if (paginaEncerrando) return;
+      definirStatusWs("offline");
+      mensagemEl.textContent = "Sem internet. Aguardando conexao para reconectar...";
+    });
+
+    window.addEventListener("beforeunload", () => {
+      paginaEncerrando = true;
+      if (timerReconexao) {
+        clearTimeout(timerReconexao);
+        timerReconexao = undefined;
+      }
+      if (timerIndicacao) {
+        clearTimeout(timerIndicacao);
+        timerIndicacao = undefined;
+      }
+      if (socket) socket.close();
+    });
   </script>
 </body>
 </html>
