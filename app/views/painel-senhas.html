@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel de Senhas</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="painel-tv">
+  <div class="app-shell app-shell--tv">
+    <main class="panel panel--tv">
+      <header class="tv-head">
+        <div>
+          <h1 class="panel-title">Recepção Clínica</h1>
+          <p class="panel-subtitle">Acompanhe sua chamada.</p>
+        </div>
+
+        <div class="tv-badge" title="Atualização em tempo real">
+          <span class="tv-badge-dot" aria-hidden="true"></span>
+          Tempo real
+        </div>
+      </header>
+
+      <section class="tv-grid">
+        <article class="tv-now">
+          <p class="tv-label">Senha atual</p>
+          <p id="senhaAtual" class="tv-number">000</p>
+          <p id="mensagem" class="message message--inverted"></p>
+        </article>
+
+        <article class="card tv-history">
+          <div class="tv-history-head">
+            <h2 class="card-title">Últimas chamadas</h2>
+            <p class="card-subtitle">Mais recentes no topo.</p>
+          </div>
+          <ul id="historico" class="tv-history-list"></ul>
+        </article>
+
+        <article class="card tv-info">
+          <h2 class="card-title">Orientação</h2>
+          <p class="card-subtitle">Quando sua senha for chamada:</p>
+          <ol class="tv-steps">
+            <li>Dirija-se ao consultório indicado pela recepção.</li>
+            <li>Mantenha seus documentos em mãos.</li>
+            <li>Se não ouvir a chamada, procure a recepção.</li>
+          </ol>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const senhaAtualEl = document.getElementById("senhaAtual");
+    const historicoEl = document.getElementById("historico");
+    const mensagemEl = document.getElementById("mensagem");
+
+    function formatarSenha(numero) {
+      return String(numero).padStart(3, "0");
+    }
+
+    function animarAtualizacao() {
+      senhaAtualEl.classList.remove("pulse");
+      void senhaAtualEl.offsetWidth;
+      senhaAtualEl.classList.add("pulse");
+    }
+
+    function renderizarHistorico(lista) {
+      historicoEl.innerHTML = "";
+
+      if (!Array.isArray(lista) || lista.length === 0) {
+        const item = document.createElement("li");
+        item.className = "tv-history-empty";
+        item.textContent = "Aguardando primeira chamada.";
+        historicoEl.appendChild(item);
+        return;
+      }
+
+      lista.forEach((senha) => {
+        const item = document.createElement("li");
+        const numero = document.createElement("span");
+        numero.className = "tv-history-num";
+        numero.textContent = formatarSenha(senha);
+
+        const texto = document.createElement("span");
+        texto.className = "tv-history-text";
+        texto.textContent = "Chamado";
+
+        item.append(numero, texto);
+        historicoEl.appendChild(item);
+      });
+    }
+
+    async function carregarEstadoInicial() {
+      try {
+        const [estadoResp, historicoResp] = await Promise.all([
+          fetch("/estado"),
+          fetch("/historico")
+        ]);
+
+        const estado = await estadoResp.json();
+        const historico = await historicoResp.json();
+
+        if (typeof estado.senhaAtual === "number") {
+          senhaAtualEl.textContent = formatarSenha(estado.senhaAtual);
+          animarAtualizacao();
+        }
+
+        renderizarHistorico(historico.historico);
+      } catch {
+        mensagemEl.textContent = "Não foi possível carregar o estado inicial.";
+      }
+    }
+
+    async function atualizarHistorico() {
+      try {
+        const historicoResp = await fetch("/historico");
+        const historico = await historicoResp.json();
+        renderizarHistorico(historico.historico);
+      } catch {
+        mensagemEl.textContent = "Falha ao atualizar histórico.";
+      }
+    }
+
+    function conectarWs() {
+      const protocolo = window.location.protocol === "https:" ? "wss" : "ws";
+      const socket = new WebSocket(`${protocolo}://${window.location.host}`);
+
+      socket.onmessage = (event) => {
+        try {
+          const estado = JSON.parse(event.data);
+          if (typeof estado.senhaAtual === "number") {
+            senhaAtualEl.textContent = formatarSenha(estado.senhaAtual);
+            animarAtualizacao();
+            atualizarHistorico();
+            mensagemEl.textContent = "";
+          }
+        } catch {
+          mensagemEl.textContent = "Mensagem WS invalida recebida.";
+        }
+      };
+
+      socket.onerror = () => {
+        mensagemEl.textContent = "Erro na conexao WebSocket.";
+      };
+
+      socket.onclose = () => {
+        mensagemEl.textContent = "Conexao WebSocket encerrada.";
+      };
+    }
+
+    carregarEstadoInicial();
+    conectarWs();
+  </script>
+</body>
+</html>

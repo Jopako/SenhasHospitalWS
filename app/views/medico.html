@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel do Medico</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="page-medico">
+  <div class="app-shell">
+    <main class="panel panel--medico" style="max-width: 980px;">
+      <header class="panel-head">
+        <a class="back-link" href="/">← Central</a>
+        <div class="panel-head-text">
+          <h1 class="panel-title">Painel do Médico</h1>
+          <p class="panel-subtitle">Controle de chamada da fila de atendimento.</p>
+        </div>
+      </header>
+
+      <section class="medico-grid">
+        <article class="card card--action">
+          <h2 class="card-title">Chamada</h2>
+          <p class="card-subtitle">Quando estiver pronto, chame o próximo paciente da fila.</p>
+
+          <button id="botaoProximo" class="cta cta--xl">Chamar próximo paciente</button>
+          <p id="mensagem" class="message"></p>
+        </article>
+
+        <article class="card card--kpi">
+          <p class="kpi-label">Senha atual</p>
+          <p id="senhaAtual" class="kpi-number">000</p>
+          <p class="kpi-hint">Atualiza a cada chamada.</p>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const botaoProximo = document.getElementById("botaoProximo");
+    const senhaAtualEl = document.getElementById("senhaAtual");
+    const mensagemEl = document.getElementById("mensagem");
+
+    function formatarSenha(numero) {
+      return String(numero).padStart(3, "0");
+    }
+
+    function animarAtualizacao() {
+      senhaAtualEl.classList.remove("pulse");
+      void senhaAtualEl.offsetWidth;
+      senhaAtualEl.classList.add("pulse");
+    }
+
+    async function carregarEstadoInicial() {
+      try {
+        const resposta = await fetch("/estado");
+        const estado = await resposta.json();
+        if (typeof estado.senhaAtual === "number") {
+          senhaAtualEl.textContent = formatarSenha(estado.senhaAtual);
+          animarAtualizacao();
+        }
+      } catch {
+        mensagemEl.textContent = "Nao foi possivel carregar o estado inicial.";
+      }
+    }
+
+    botaoProximo.addEventListener("click", async () => {
+      botaoProximo.disabled = true;
+      mensagemEl.textContent = "";
+
+      try {
+        const resposta = await fetch("/medico", { method: "POST" });
+        const estadoAtualizado = await resposta.json();
+        if (typeof estadoAtualizado.senhaAtual === "number") {
+          senhaAtualEl.textContent = formatarSenha(estadoAtualizado.senhaAtual);
+          animarAtualizacao();
+        }
+      } catch {
+        mensagemEl.textContent = "Erro ao chamar a proxima senha.";
+      } finally {
+        botaoProximo.disabled = false;
+      }
+    });
+
+    carregarEstadoInicial();
+  </script>
+</body>
+</html>

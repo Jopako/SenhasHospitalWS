@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitor WebSocket</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="page-ws">
+  <div class="app-shell">
+    <main class="panel panel--ws" style="max-width: 1100px;">
+      <header class="panel-head">
+        <a class="back-link" href="/">← Central</a>
+        <div class="panel-head-text">
+          <h1 class="panel-title">Monitor WebSocket</h1>
+          <p class="panel-subtitle">Console de conexão para diagnóstico em tempo real.</p>
+        </div>
+      </header>
+
+      <section class="ws-grid">
+        <article class="card ws-status">
+          <h2 class="card-title">Status</h2>
+          <p class="card-subtitle">Conecte para acompanhar eventos do servidor.</p>
+
+          <div class="status-row">
+            <div id="status-led" class="led offline"></div>
+            <span id="status-text">Desconectado</span>
+            <button class="ghost" onclick="conectar()">Conectar</button>
+            <button class="ghost ghost--danger" onclick="desconectar()">Fechar</button>
+          </div>
+
+          <p class="ws-hint">As mensagens mais recentes aparecem no topo do log.</p>
+        </article>
+
+        <article class="card ws-log">
+          <div class="ws-log-head">
+            <h2 class="card-title">Log</h2>
+            <p class="card-subtitle">Mais recentes primeiro.</p>
+          </div>
+          <div id="log" class="log-box"></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let socket;
+    const led = document.getElementById("status-led");
+    const text = document.getElementById("status-text");
+    const logDiv = document.getElementById("log");
+
+    function adicionarLog(msg, tipo) {
+      const linha = document.createElement("div");
+      linha.className = tipo;
+      linha.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logDiv.prepend(linha);
+    }
+
+    function conectar() {
+      const protocolo = window.location.protocol === "https:" ? "wss" : "ws";
+      socket = new WebSocket(`${protocolo}://${window.location.host}`);
+
+      socket.onopen = () => {
+        led.className = "led online";
+        text.innerText = "Online - Conectado ao servidor";
+        adicionarLog("Conexão estabelecida", "log-in");
+      };
+
+      socket.onmessage = (event) => {
+        adicionarLog("RECEBIDO: " + event.data, "log-in");
+      };
+
+      socket.onclose = () => {
+        led.className = "led offline";
+        text.innerText = "Offline - Conexão encerrada";
+        adicionarLog("Conexão fechada", "log-out");
+      };
+
+      socket.onerror = () => {
+        adicionarLog("Erro na conexão", "log-out");
+      };
+    }
+
+    function desconectar() {
+      if (socket) socket.close();
+    }
+  </script>
+</body>
+</html>
