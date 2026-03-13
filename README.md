@@ -63,11 +63,24 @@ Servidor padrão:
 ## Diagrama de Fluxo (Arquitetura MVP)
 
 ```mermaid
-graph TD
-    A[VIEW: Médico] -->|1. Solicita Próxima| B[PRESENTER: server.js]
-    B -->|2. Pede Atualização| C[MODEL: clinicaModel]
-    C -->|3. Salva Estado| D[(PERSISTÊNCIA: dados.json)]
-    B -->|4. Broadcast WS| E[VIEW: Painel / Monitor]
+flowchart TB
+  VM["View (Medico)<br/>medico.html"]
+  R["Rotas HTTP<br/>routes.js"]
+  P["Presenter<br/>clinicaPresenter.js"]
+  M["Model<br/>clinicaModel.js"]
+  E["Estado Atualizado<br/>(senhaAtual, historico)"]
+  W["WebSocket Server<br/>server.js"]
+  VP["View (Painel/Monitor)<br/>painel-senhas.html / ws.html"]
+
+  VM -->|"1. POST /medico"| R
+  R -->|"2. chama Presenter"| P
+  P -->|"3. chama Model"| M
+  M -->|"4. retorna estado"| E
+  E -->|"5. resposta JSON"| VM
+
+  VP -->|"6. conecta WS"| W
+  E -->|"7. broadcast"| W
+  W -->|"8. push estado"| VP
 ```
 
 ### - Model (clinicaModel): 
