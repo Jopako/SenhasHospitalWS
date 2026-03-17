@@ -711,6 +711,22 @@
     margin-bottom: 16px;
   }
 
+  .tv-head-right {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .tv-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+  }
+
   .tv-badge {
     display: inline-flex;
     align-items: center;

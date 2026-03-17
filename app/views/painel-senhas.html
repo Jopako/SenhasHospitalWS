@@ -16,17 +16,24 @@
           <p class="panel-subtitle">Acompanhe sua chamada.</p>
         </div>
 
-        <div class="tv-badge" title="Atualização em tempo real">
-          <span class="tv-badge-dot" aria-hidden="true"></span>
-          <span id="tvStatusText">Tempo real</span>
+        <div class="tv-head-right">
+          <div class="tv-actions" aria-label="Ações do painel">
+            <button id="btnFullscreen" class="ghost" type="button">Tela cheia</button>
+            <button id="btnSom" class="ghost" type="button">Som: Off</button>
+          </div>
+
+          <div class="tv-badge" title="Atualização em tempo real">
+            <span class="tv-badge-dot" aria-hidden="true"></span>
+            <span id="tvStatusText">Tempo real</span>
+          </div>
         </div>
       </header>
 
       <section class="tv-grid">
         <article class="tv-now">
           <p class="tv-label">Senha atual</p>
-          <p id="senhaAtual" class="tv-number">000</p>
-          <p id="mensagem" class="message message--inverted"></p>
+          <p id="senhaAtual" class="tv-number" aria-live="polite" aria-atomic="true">000</p>
+          <p id="mensagem" class="message message--inverted" role="status" aria-live="polite"></p>
         </article>
 
         <article class="card tv-history">
@@ -56,6 +63,8 @@
     const mensagemEl = document.getElementById("mensagem");
     const tvStatusTextEl = document.getElementById("tvStatusText");
     const tvStatusDotEl = document.querySelector(".tv-badge-dot");
+    const btnFullscreenEl = document.getElementById("btnFullscreen");
+    const btnSomEl = document.getElementById("btnSom");
 
     let socket;
     let tentativaReconexao = 0;
@@ -63,9 +72,85 @@
     let timerIndicacao;
     let paginaEncerrando = false;
     let jaConectouUmaVez = false;
+    let somAtivo = false;
+    let audioContext;
+    let ultimaSenhaRenderizada;
 
     function formatarSenha(numero) {
       return String(numero).padStart(3, "0");
+    }
+
+    function carregarPreferenciaSom() {
+      try {
+        const salvo = localStorage.getItem("painelSomAtivo");
+        somAtivo = salvo === "true";
+      } catch {
+        somAtivo = false;
+      }
+      atualizarRotuloSom();
+    }
+
+    function atualizarRotuloSom() {
+      if (!btnSomEl) return;
+      btnSomEl.textContent = somAtivo ? "Som: On" : "Som: Off";
+    }
+
+    function definirSomAtivo(novoValor) {
+      somAtivo = Boolean(novoValor);
+      atualizarRotuloSom();
+      try {
+        localStorage.setItem("painelSomAtivo", String(somAtivo));
+      } catch {
+        // ignore
+      }
+      if (somAtivo) {
+        try {
+          if (!audioContext) {
+            const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+            audioContext = AudioContextCtor ? new AudioContextCtor() : undefined;
+          }
+          if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume();
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    function tocarBeep() {
+      if (!somAtivo) return;
+
+      try {
+        if (!audioContext) {
+          const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+          audioContext = AudioContextCtor ? new AudioContextCtor() : undefined;
+        }
+
+        if (!audioContext) return;
+        if (audioContext.state === "suspended") {
+          audioContext.resume();
+        }
+
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+
+        oscillator.type = "sine";
+        oscillator.frequency.value = 880;
+
+        const agora = audioContext.currentTime;
+        gain.gain.setValueAtTime(0, agora);
+        gain.gain.linearRampToValueAtTime(0.22, agora + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, agora + 0.18);
+
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+
+        oscillator.start(agora);
+        oscillator.stop(agora + 0.2);
+      } catch {
+        // ignore
+      }
     }
 
     function definirStatusWs(status) {
@@ -145,6 +230,7 @@
         const historico = await historicoResp.json();
 
         if (typeof estado.senhaAtual === "number") {
+          ultimaSenhaRenderizada = estado.senhaAtual;
           senhaAtualEl.textContent = formatarSenha(estado.senhaAtual);
           animarAtualizacao();
         }
@@ -198,10 +284,13 @@
         try {
           const estado = JSON.parse(event.data);
           if (typeof estado.senhaAtual === "number") {
+            const senhaMudou = ultimaSenhaRenderizada !== undefined && estado.senhaAtual !== ultimaSenhaRenderizada;
+            ultimaSenhaRenderizada = estado.senhaAtual;
             senhaAtualEl.textContent = formatarSenha(estado.senhaAtual);
             animarAtualizacao();
             atualizarHistorico();
             mensagemEl.textContent = "";
+            if (senhaMudou) tocarBeep();
           }
         } catch {
           mensagemEl.textContent = "Mensagem WS invalida recebida.";
@@ -252,8 +341,35 @@
       return socket;
     }
 
+    function toggleFullscreen() {
+      try {
+        const doc = document;
+        if (!doc.fullscreenElement) {
+          doc.documentElement.requestFullscreen?.();
+        } else {
+          doc.exitFullscreen?.();
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     carregarEstadoInicial();
+    carregarPreferenciaSom();
     socket = conectarWs();
+
+    if (btnFullscreenEl) {
+      btnFullscreenEl.addEventListener("click", toggleFullscreen);
+    }
+
+    if (btnSomEl) {
+      btnSomEl.addEventListener("click", () => definirSomAtivo(!somAtivo));
+    }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "f" || event.key === "F") toggleFullscreen();
+      if (event.key === "m" || event.key === "M") definirSomAtivo(!somAtivo);
+    });
 
     window.addEventListener("online", () => {
       if (paginaEncerrando) return;
